@@ -13,6 +13,7 @@ import random
 # --- KONFIGURATION ---
 SHEET_NAME = "MeineRezepte"
 
+# API Key sicher laden (Cloud oder Lokal)
 if "GEMINI_API_KEY" in st.secrets:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 else:
@@ -21,49 +22,38 @@ else:
 # --- UI SETUP ---
 st.set_page_config(page_title="Chef's App", page_icon="🍳", layout="wide")
 
-# --- THEME LOGIC (KORRIGIERT) ---
+# --- THEME LOGIC ---
 if "theme" not in st.session_state:
     st.session_state.theme = "light"
 
-# Farb-Palette definieren
+# Farben definieren
 if st.session_state.theme == "dark":
-    # --- DARK MODE ---
     bg_color = "#0e1117"
     text_color = "#fafafa"
-    
     card_bg = "#1e2127"
     input_bg = "#262730"
     border_color = "#30333d"
-    
     shadow = "rgba(0,0,0,0.5)"
     accent_color = "#ff4b4b"
     step_highlight_bg = "#2d2323"
 else:
-    # --- LIGHT MODE (FIX) ---
-    bg_color = "#ffffff"        # Reines Weiß für Hintergrund
-    text_color = "#31333F"      # Dunkelgrau für Text (Standard Streamlit)
-    
-    card_bg = "#f9f9f9"         # Ganz leichtes Grau für Karten
-    input_bg = "#ffffff"        # Weiß für Inputs
-    border_color = "#d5d7de"    # Sichtbarer grauer Rand
-    
+    bg_color = "#ffffff"
+    text_color = "#31333F"
+    card_bg = "#f9f9f9"
+    input_bg = "#ffffff"
+    border_color = "#d5d7de"
     shadow = "rgba(0,0,0,0.05)"
     accent_color = "#ff4b4b"
-    step_highlight_bg = "#fff5f5" # Ganz helles Rot
+    step_highlight_bg = "#fff5f5"
 
 # --- CSS INJECTION ---
 st.markdown(f"""
     <style>
     /* 1. Globaler Reset */
-    .stApp {{
-        background-color: {bg_color};
-    }}
-    
-    h1, h2, h3, h4, h5, h6, p, li, span, div, label {{
-        color: {text_color} !important;
-    }}
+    .stApp {{ background-color: {bg_color}; }}
+    h1, h2, h3, h4, h5, h6, p, li, span, div, label {{ color: {text_color} !important; }}
 
-    /* 2. Buttons */
+    /* 2. Buttons (Mobile Friendly) */
     div.stButton > button {{
         min-height: 3.5rem;
         font-size: 1.1rem;
@@ -74,36 +64,23 @@ st.markdown(f"""
         color: {text_color} !important;
         border: 1px solid {border_color};
     }}
-    
-    /* Primary Button Text muss immer weiß sein */
     div.stButton > button[kind="primary"] {{
         background-color: {accent_color} !important;
         border: none;
     }}
-    div.stButton > button[kind="primary"] * {{
-        color: #ffffff !important;
-    }}
+    div.stButton > button[kind="primary"] * {{ color: #ffffff !important; }}
 
-    /* 3. Inputs & Selectboxen (Der Kontrast-Killer) */
+    /* 3. Inputs & Selectboxen */
     .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {{
         background-color: {input_bg} !important;
         color: {text_color} !important;
         border-color: {border_color};
     }}
-    
-    /* Dropdown-Liste (Popup) */
-    ul[data-baseweb="menu"] {{
-        background-color: {input_bg} !important;
-    }}
-    ul[data-baseweb="menu"] li span {{
-        color: {text_color} !important;
-    }}
+    ul[data-baseweb="menu"] {{ background-color: {input_bg} !important; }}
+    ul[data-baseweb="menu"] li span {{ color: {text_color} !important; }}
     
     /* 4. Checkboxen */
-    label[data-testid="stCheckbox"] {{
-        color: {text_color} !important;
-        padding: 10px 0;
-    }}
+    label[data-testid="stCheckbox"] {{ padding: 10px 0; }}
 
     /* 5. Mobile Karten */
     .mobile-card {{
@@ -115,10 +92,6 @@ st.markdown(f"""
         border: 1px solid {border_color};
     }}
     
-    .mobile-card h3, .mobile-card p, .mobile-card b {{
-        color: {text_color} !important;
-    }}
-    
     /* 6. Step Highlight */
     .step-highlight {{
         border-left: 6px solid {accent_color};
@@ -128,36 +101,26 @@ st.markdown(f"""
         border: 1px solid {border_color};
     }}
 
-    /* 7. Expander */
+    /* 7. Expander & Tabs */
     .streamlit-expanderHeader {{
         background-color: {card_bg} !important;
         color: {text_color} !important;
-        border-radius: 8px;
         border: 1px solid {border_color};
+        border-radius: 8px;
     }}
     .streamlit-expanderContent {{
         background-color: {bg_color} !important;
-        border-left: 1px solid {border_color};
-        border-right: 1px solid {border_color};
-        border-bottom: 1px solid {border_color};
-        color: {text_color} !important;
+        border: 1px solid {border_color};
+        border-top: none;
     }}
-    
+    button[data-baseweb="tab"] {{ background-color: transparent !important; }}
+    div[data-baseweb="tab-highlight"] {{ background-color: {accent_color} !important; }}
+
     /* 8. Metriken & Sidebar */
-    div[data-testid="stMetricValue"] div {{
-        color: {accent_color} !important;
-    }}
+    div[data-testid="stMetricValue"] div {{ color: {accent_color} !important; }}
     section[data-testid="stSidebar"] {{
         background-color: {card_bg};
         border-right: 1px solid {border_color};
-    }}
-    
-    /* Tabs */
-    button[data-baseweb="tab"] {{
-        background-color: transparent !important;
-    }}
-    div[data-baseweb="tab-highlight"] {{
-        background-color: {accent_color} !important;
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -199,22 +162,38 @@ def get_video_id(url):
 
 def get_youtube_content(url):
     vid_id = get_video_id(url)
-    if not vid_id: return None
+    if not vid_id: return "ERROR: Keine gültige YouTube-ID gefunden."
+    
+    # 1. VERSUCH: Transcript (Robust)
     try:
-        transcript = YouTubeTranscriptApi.get_transcript(vid_id, languages=['de', 'en'])
-        return f"YOUTUBE_TRANSCRIPT: {' '.join([t['text'] for t in transcript])}"
-    except: pass 
+        transcript = YouTubeTranscriptApi.get_transcript(vid_id, languages=['de', 'en', 'en-US', 'de-DE'])
+        text = " ".join([t['text'] for t in transcript])
+        return f"YOUTUBE_TRANSCRIPT: {text}"
+    except: pass
+    
+    # 2. VERSUCH: Audio (Mit Timeout und Fake User-Agent)
     try:
-        ydl_opts = {'format': 'bestaudio[ext=m4a]/bestaudio/best', 'outtmpl': f'temp_{vid_id}.%(ext)s', 'quiet': True, 'noplaylist': True}
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': f'temp_{vid_id}.%(ext)s',
+            'quiet': True,
+            'noplaylist': True,
+            'socket_timeout': 10,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             return ydl.prepare_filename(info)
-    except: return None
+    except Exception as e:
+        return f"ERROR: Download fehlgeschlagen. Fehler: {str(e)}"
 
 def rezept_analysieren(content, is_file=False):
     if not GEMINI_API_KEY or "HIER" in GEMINI_API_KEY:
         st.error("⚠️ API Key fehlt!")
         return None
+
+    if isinstance(content, str) and content.startswith("ERROR:"):
+        st.error(content); return None
 
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel('gemini-flash-latest') 
@@ -318,7 +297,7 @@ sh_z = st.session_state.sheet_z
 sh_s = st.session_state.sheet_s
 sh_b = st.session_state.sheet_b
 
-# --- SIDEBAR & THEME TOGGLE ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.title("🍳 Menü")
     
@@ -349,7 +328,6 @@ if menu == "🏠 Start":
             for fav in favs:
                 st.markdown(f"""<div class="mobile-card"><h3>{fav}</h3></div>""", unsafe_allow_html=True)
                 st.button(f"Kochen: {fav}", key=f"f_{fav}", on_click=go_to_recipe, args=(fav,), use_container_width=True)
-        
         st.divider()
         st.subheader("🎲 Vorschlag")
         all_r = list(df_z['Rezept'].unique())
@@ -479,19 +457,29 @@ elif menu == "🧺 Bestand":
 
 elif menu == "➕ Neu":
     st.title("✨ Import")
+    st.info("💡 Tipp: Videos mit Untertiteln funktionieren am besten.")
     t1, t2 = st.tabs(["YouTube", "Text"])
+    
     def run_import(c, is_f):
+        if isinstance(c, str) and c.startswith("ERROR:"): st.error(c.replace("ERROR:", "❌")); return
         with st.spinner("⏳ Analysiere..."):
             d = rezept_analysieren(c, is_f)
-            if is_f and os.path.exists(c): os.remove(c)
+            if is_f and isinstance(c, str) and os.path.exists(c): os.remove(c)
             if d:
-                save_recipe_to_db(d, sh_z, sh_s); st.toast("Gespeichert!", icon="✅"); time.sleep(2)
+                save_recipe_to_db(d, sh_z, sh_s); st.balloons(); st.toast("Gespeichert!", icon="✅"); time.sleep(2)
                 st.session_state.df_zutaten, _, _, _, _, _ = get_data(); st.rerun()
+
     with t1:
         u = st.text_input("YouTube Link:")
-        if st.button("Start Import", type="primary", use_container_width=True) and u:
-            c = get_youtube_content(u); 
-            if c: run_import(c, "YOUTUBE_TRANSCRIPT:" not in c)
+        if st.button("Video Importieren 🚀", type="primary", use_container_width=True):
+            if u:
+                with st.status("Lade Video...", expanded=True) as s:
+                    c = get_youtube_content(u)
+                    if c and not c.startswith("ERROR:"): s.write("✅ Gefunden!"); run_import(c, "YOUTUBE_TRANSCRIPT:" not in c)
+                    else: s.update(label="Fehler", state="error"); st.error(c if c else "Fehler")
+            else: st.warning("Bitte Link eingeben.")
     with t2:
         txt = st.text_area("Rezept Text:", height=200)
-        if st.button("Text Importieren", type="primary", use_container_width=True) and txt: run_import(txt, False)
+        if st.button("Text Importieren 📝", type="primary", use_container_width=True):
+            if txt: run_import(txt, False)
+            else: st.warning("Bitte Text eingeben.")
