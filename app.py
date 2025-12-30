@@ -93,31 +93,45 @@ def get_youtube_content(url):
     vid_id = get_video_id(url)
     if not vid_id: return "ERROR: Keine gültige YouTube-ID gefunden."
     
-    # Transcript bevorzugen (Stabil auf Mobile/Cloud)
+    # 1. VERSUCH: Untertitel (Transcript) - Schnell & Sicher
     try:
         transcript = YouTubeTranscriptApi.get_transcript(vid_id, languages=['de', 'en', 'en-US', 'de-DE'])
         text = " ".join([t['text'] for t in transcript])
-        return f"YOUTUBE_TRANSCRIPT: {text}"
+        return f"YOUTUBE_TEXT: {text}"
     except: pass
     
-    # Audio Fallback
+    # 2. VERSUCH: Nur Metadaten (Beschreibung) - Falls Download blockiert wird
+    try:
+        ydl_opts_meta = {'quiet': True, 'noplaylist': True}
+        with yt_dlp.YoutubeDL(ydl_opts_meta) as ydl:
+            info = ydl.extract_info(url, download=False) # Nur Infos holen, nicht downloaden
+            desc = info.get('description', '')
+            title = info.get('title', '')
+            # Wenn Beschreibung lang genug ist, nutzen wir die!
+            if len(desc) > 50:
+                return f"YOUTUBE_TEXT: Titel: {title}\nBeschreibung: {desc}"
+    except: pass
+
+    # 3. VERSUCH: Audio Download (Der "Heavy" Weg) - Scheitert oft in der Cloud
     try:
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': f'temp_{vid_id}.%(ext)s',
-            'quiet': True, 'noplaylist': True, 'socket_timeout': 10,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+            'quiet': True, 
+            'noplaylist': True, 
+            'socket_timeout': 10
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             return ydl.prepare_filename(info)
     except Exception as e:
-        return f"ERROR: Download fehlgeschlagen (Cloud Block). {str(e)}"
+        return f"ERROR: YouTube blockiert den Zugriff. Fehler: {str(e)}"
 
 def rezept_analysieren(content, is_file=False):
     if not GEMINI_API_KEY or "HIER" in GEMINI_API_KEY:
         st.error("⚠️ API Key fehlt!"); return None
     
+    # Fehler abfangen
     if isinstance(content, str) and content.startswith("ERROR:"):
         st.error(content.replace("ERROR:", "❌")); return None
 
@@ -127,8 +141,10 @@ def rezept_analysieren(content, is_file=False):
     prompt = """
     Du bist ein Koch-Übersetzer. Analysiere das Rezept.
     Ergebnis MUSS auf DEUTSCH sein.
-    1. Extrahiere Zutaten (Singular, standardisierte Einheiten).
-    2. Extrahiere die Anleitung als LISTE von einzelnen Schritten.
+    
+    Quelle kann ein Transkript, eine Videobeschreibung oder eine Audiodatei sein.
+    Versuche Zutaten und Schritte logisch zu extrahieren.
+    
     Antworte NUR mit reinem JSON:
     {
       "Rezept": "Name",
@@ -138,15 +154,17 @@ def rezept_analysieren(content, is_file=False):
     """
     try:
         if is_file and os.path.exists(content):
+            # Fall: Echte Audio-Datei (selten in Cloud)
             myfile = genai.upload_file(content)
             while myfile.state.name == "PROCESSING": time.sleep(1); myfile = genai.get_file(myfile.name)
             response = model.generate_content([prompt, myfile])
         else:
+            # Fall: Text (Transcript oder Beschreibung)
             response = model.generate_content(f"{prompt}\n\nInput:\n{content}")
+            
         return json.loads(response.text.replace("```json", "").replace("```", "").strip())
     except Exception as e:
         st.error(f"KI Fehler: {e}"); return None
-
 # --- DATENBANK ---
 def get_data():
     try:
