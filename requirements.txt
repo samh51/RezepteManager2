@@ -1,0 +1,7 @@
+streamlit
+gspread
+pandas
+oauth2client
+google-generativeai
+youtube-transcript-api
+yt-dlp
